@@ -109,8 +109,9 @@ void Simulation::run() {
     events().notify(Event::End, state_);
 }
 
+// Em simulation_cylindrical.cpp
 void Simulation::reduce_rho() {
-    const auto k = constants::e * parameters_.particle_weight / (2 * constants::pi * parameters_.dz * parameters_.dr);
+    const auto k = constants::e * parameters_.particle_weight / (parameters_.dz * parameters_.dr);
 
     auto* rho_ptr = rho_field_.data_ptr();
     auto* ne = electron_density_.data_ptr();
@@ -156,23 +157,29 @@ void Simulation::set_initial_conditions() {
     tiled_boundary_ = spark::particle::TiledBoundary2D(electric_field_.prop(), boundaries, parameters_.dt);
 }
 
-    spark::collisions::MCCReactionSet<2, 3> Simulation::load_electron_collisions() {
-        auto electron_reactions = reactions::load_electron_reactions(data_path_, parameters_, ions_);
-        spark::collisions::ReactionConfig<2, 3> electron_reaction_config{
-            parameters_.dt, parameters_.dz,
-            std::make_unique<spark::collisions::StaticUniformTarget<2, 3>>(parameters_.ng, parameters_.tg),
-            std::move(electron_reactions), spark::collisions::RelativeDynamics::FastProjectile};
+spark::collisions::MCCReactionSet<2, 3> Simulation::load_electron_collisions() {
+    auto electron_reactions = reactions::load_electron_reactions(data_path_, parameters_, ions_);
+    
+    spark::collisions::ReactionConfig<2, 3> electron_reaction_config{
+        .dt = parameters_.dt,
+        .target = std::make_shared<spark::collisions::StaticUniformTarget<2, 3>>(parameters_.ng, parameters_.tg),
+        .reactions = std::move(electron_reactions),
+        .dyn = spark::collisions::RelativeDynamics::FastProjectile
+    };
 
-        return spark::collisions::MCCReactionSet(electrons_, std::move(electron_reaction_config));
-    }
+    return spark::collisions::MCCReactionSet(&electrons_, std::move(electron_reaction_config));
+}
 
-    spark::collisions::MCCReactionSet<2, 3> Simulation::load_ion_collisions() {
-        auto ion_reactions = reactions::load_ion_reactions(data_path_, parameters_);
-        spark::collisions::ReactionConfig<2, 3> ion_reaction_config{
-            parameters_.dt, parameters_.dz,
-            std::make_unique<spark::collisions::StaticUniformTarget<2, 3>>(parameters_.ng, parameters_.tg),
-            std::move(ion_reactions), spark::collisions::RelativeDynamics::SlowProjectile};
+spark::collisions::MCCReactionSet<2, 3> Simulation::load_ion_collisions() {
+    auto ion_reactions = reactions::load_ion_reactions(data_path_, parameters_);
 
-        return spark::collisions::MCCReactionSet(ions_, std::move(ion_reaction_config));
-    }
-} // namespace spark
+    spark::collisions::ReactionConfig<2, 3> ion_reaction_config{
+        .dt = parameters_.dt,
+        .target = std::make_shared<spark::collisions::StaticUniformTarget<2, 3>>(parameters_.ng, parameters_.tg),
+        .reactions = std::move(ion_reactions),
+        .dyn = spark::collisions::RelativeDynamics::SlowProjectile
+    };
+
+    return spark::collisions::MCCReactionSet(&ions_, std::move(ion_reaction_config));
+}
+}
