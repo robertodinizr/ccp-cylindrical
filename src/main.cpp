@@ -5,6 +5,7 @@
 #include "spark/random/random.h"
 #include "simulation.h"
 #include "simulation_events.h"
+#include <mpi.h>
 
 spark::Parameters get_case_parameters(int case_number) {
     spark::Parameters p;
@@ -30,6 +31,7 @@ spark::Parameters get_case_parameters(int case_number) {
 }
 
 int main(int argc, char* argv[]) {
+    MPI_Init(&argc, &argv);
     spark::random::initialize(500);
     argparse::ArgumentParser args("spark-benchmark");
 
@@ -55,6 +57,7 @@ int main(int argc, char* argv[]) {
     spark::Simulation sim(get_case_parameters(case_number), data_path);
     spark::setup_events(sim);
     sim.run();
-
+    MPI_Finalize();
+    
     return 0;
 }

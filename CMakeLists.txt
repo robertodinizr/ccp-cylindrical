@@ -16,6 +16,10 @@ include(${CPM_DOWNLOAD_LOCATION})
 # Add external libs
 CPMAddPackage("gh:d99kris/rapidcsv@8.83")
 CPMAddPackage("gh:p-ranav/argparse@3.1")
+find_package(hypre CONFIG REQUIRED)
+find_package(MPI REQUIRED)
+find_package(rapidcsv CONFIG REQUIRED)
+find_package(argparse CONFIG REQUIRED)
 add_subdirectory(spark)
 include(FetchContent)
 
@@ -23,6 +27,7 @@ FetchContent_Declare(
   hypre
   GIT_REPOSITORY https://github.com/hypre-space/hypre.git
   GIT_TAG v2.28.0  
+  CMAKE_ARGS "-DBUILD_SHARED_LIBS=OFF"
 )
 FetchContent_MakeAvailable(hypre)
 
@@ -33,7 +38,7 @@ set(SOURCES
     src/reactions.cpp
     src/simulation_events.cpp
 )
-
+find_package(MPI REQUIRED)
 add_executable(ccp-cylindrical ${SOURCES})
 set_property(TARGET ccp-cylindrical PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 
@@ -42,11 +47,13 @@ target_include_directories(ccp-cylindrical PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/spark/include
     ${argparse_SOURCE_DIR}/include
     ${rapidcsv_SOURCE_DIR}/src
+    ${MPI_CXX_INCLUDE_PATH}
 )
 
 target_link_libraries(ccp-cylindrical PUBLIC
     spark
     HYPRE
+    MPI::MPI_CXX
     rapidcsv
     argparse
 )
