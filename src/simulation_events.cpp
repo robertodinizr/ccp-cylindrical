@@ -46,9 +46,32 @@ namespace {
 
 namespace spark {
 
+struct SaveInstantaneousDensityAction : public Simulation::EventAction {
+    Parameters parameters_;
+    explicit SaveInstantaneousDensityAction(const Parameters& parameters) : parameters_(parameters) {}
+
+    void notify(const Simulation::StateInterface& s) override {
+        auto density_e = count_to_density(parameters_.particle_weight, parameters_.dz, parameters_.dr, s.electron_density().data());
+        auto density_i = count_to_density(parameters_.particle_weight, parameters_.dz, parameters_.dr, s.ion_density().data());
+
+        save_vec("instant_density_e_step0.txt", density_e, parameters_.nz, parameters_.nr);
+        save_vec("instant_density_i_step0.txt", density_i, parameters_.nz, parameters_.nr);
+
+        save_vec("phi_field_step0.txt", s.phi_field().data().data(), parameters_.nz, parameters_.nr);
+        const auto& E_field = s.electric_field().data();
+        std::vector<double> E_x(parameters_.nz * parameters_.nr);
+        std::vector<double> E_y(parameters_.nz * parameters_.nr);
+        for (size_t i = 0; i < parameters_.nz * parameters_.nr; i++) {
+            E_x[i] = E_field.data()[i].x;
+            E_y[i] = E_field.data()[i].y;
+        }
+        save_vec("electric_field_x_step0.txt", E_x, parameters_.nz, parameters_.nr);
+        save_vec("electric_field_y_step0.txt", E_y, parameters_.nz, parameters_.nr);
+    }
+};
+
 void setup_events(Simulation& simulation) {
     constexpr size_t print_step_interval = 1000;
-
     struct PrintStartAction : public Simulation::EventAction {
         void notify(const Simulation::StateInterface&) override { printf("Starting simulation\n"); }
     };
@@ -75,7 +98,11 @@ void setup_events(Simulation& simulation) {
                 initial_step = step;
                 const float progress = static_cast<float>(step) /
                     static_cast<float>(std::max(1, (int) s.parameters().n_steps - 1));
-                const double dur_per_particle = dur / (static_cast<double>(s.electrons().n() + s.ions().n()));
+                double dur_per_particle = 0.0;
+                const size_t total_particles = s.electrons().n() + s.ions().n();
+                if (total_particles > 0) {
+                    dur_per_particle = dur / static_cast<double>(total_particles);
+                }
                 printf("Info (Step: %zu/%zu, %.2f%%):\n", step, s.parameters().n_steps, progress * 100.0);
                 printf("    Avg step duration: %.2fms (%.2eus/p)\n", dur, dur_per_particle * 1e3);
                 printf("    Sim electrons: %zu\n", s.electrons().n());
@@ -162,6 +189,7 @@ void setup_events(Simulation& simulation) {
             save_particle_velocities("velocity_i.txt", s.ions());
         }
     };
+    simulation.events().add_action(Simulation::Event::End, SaveInstantaneousDensityAction(simulation.state().parameters()));
     simulation.events().add_action(Simulation::Event::End, SaveParticleDataAction(simulation.state().parameters()));
 }
 } // namespace spark

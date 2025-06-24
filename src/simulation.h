@@ -59,7 +59,7 @@ namespace spark {
         Parameters parameters_;
         std::string data_path_;
         StateInterface state_;
-        
+
         size_t step = 0;
         spark::particle::ChargedSpecies<2, 3> ions_;
         spark::particle::ChargedSpecies<2, 3> electrons_;
@@ -72,7 +72,7 @@ namespace spark {
 
         Events<Event, EventAction> events_;
 
-        void reduce_rho();    
+        void reduce_rho();
         std::vector<spark::em::CylindricalPoissonSolver2D::Region> region() const;
         spark::spatial::TUniformGrid<spark::core::Vec<2>, 2> convert_electric_field() const;
         //spark::spatial::TUniformGrid<spark::core::TVec<double, 2>, 2> electric_field_;

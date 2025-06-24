@@ -1,10 +1,24 @@
 cmake_minimum_required(VERSION 3.20)
-project(ccp-cylindrical)
+project(ccp-cylindrical LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
-set(FETCHCONTENT_QUIET OFF CACHE BOOL "" FORCE)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# Add CPM
+
+find_path(HYPRE_INCLUDE_DIR NAMES HYPRE.h PATH_SUFFIXES hypre)
+find_library(HYPRE_LIBRARY NAMES HYPRE)
+if(HYPRE_INCLUDE_DIR AND HYPRE_LIBRARY)
+    add_library(HYPRE::HYPRE INTERFACE IMPORTED)
+    set_target_properties(HYPRE::HYPRE PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${HYPRE_INCLUDE_DIR}"
+        INTERFACE_LINK_LIBRARIES "${HYPRE_LIBRARY}"
+    )
+    message(STATUS "HYPRE encontrado manualmente em ${HYPRE_LIBRARY}")
+else()
+    message(FATAL_ERROR "Não foi possível encontrar a biblioteca HYPRE manualmente.")
+endif()
+
+find_package(MPI REQUIRED)
+
 set(CPM_DOWNLOAD_VERSION 0.40.2)
 set(CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
 if(NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
@@ -13,23 +27,10 @@ if(NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
 endif()
 include(${CPM_DOWNLOAD_LOCATION})
 
-# Add external libs
 CPMAddPackage("gh:d99kris/rapidcsv@8.83")
 CPMAddPackage("gh:p-ranav/argparse@3.1")
-find_package(hypre CONFIG REQUIRED)
-find_package(MPI REQUIRED)
-find_package(rapidcsv CONFIG REQUIRED)
-find_package(argparse CONFIG REQUIRED)
-add_subdirectory(spark)
-include(FetchContent)
 
-FetchContent_Declare(
-  hypre
-  GIT_REPOSITORY https://github.com/hypre-space/hypre.git
-  GIT_TAG v2.28.0  
-  CMAKE_ARGS "-DBUILD_SHARED_LIBS=OFF"
-)
-FetchContent_MakeAvailable(hypre)
+add_subdirectory(spark)
 
 set(SOURCES
     src/main.cpp
@@ -38,21 +39,12 @@ set(SOURCES
     src/reactions.cpp
     src/simulation_events.cpp
 )
-find_package(MPI REQUIRED)
-add_executable(ccp-cylindrical ${SOURCES})
-set_property(TARGET ccp-cylindrical PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 
-target_include_directories(ccp-cylindrical PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/spark/include
-    ${argparse_SOURCE_DIR}/include
-    ${rapidcsv_SOURCE_DIR}/src
-    ${MPI_CXX_INCLUDE_PATH}
-)
+add_executable(ccp-cylindrical ${SOURCES})
 
 target_link_libraries(ccp-cylindrical PUBLIC
     spark
-    HYPRE
+    HYPRE::HYPRE
     MPI::MPI_CXX
     rapidcsv
     argparse
