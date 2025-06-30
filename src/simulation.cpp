@@ -39,22 +39,22 @@ void Simulation::run() {
 
     regions.push_back(em::CylindricalPoissonSolver2D::Region{
         em::CellType::BoundaryNeumann,
-        {0, 1},
-        {0, static_cast<int>(parameters_.nr - 2)},
+        {0, 0},
+        {0, static_cast<int>(parameters_.nr - 1)},
         []() { return 0.0; }
     });
     regions.push_back(em::CylindricalPoissonSolver2D::Region{
         em::CellType::BoundaryNeumann,
-        {static_cast<int>(parameters_.nz - 1), 1},
+        {static_cast<int>(parameters_.nz - 1), 0},
         {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 2)},
         []() { return 0.0; }
     });
 
     regions.push_back(em::CylindricalPoissonSolver2D::Region{
-        em::CellType::BoundaryDirichlet,
-        {0, 0},
-        {static_cast<int>(parameters_.nz - 1), 0},
-        []() { return 0.0; }
+    em::CellType::BoundaryDirichlet,
+    {0, 0},
+    {static_cast<int>(parameters_.nz - 1), 0},
+    []() { return 0.0; } 
     });
 
     double boundary_voltage = 0.0;
@@ -159,8 +159,8 @@ void Simulation::set_initial_conditions() {
         auto emitter = [this](double t, double m) {
         return [t, m, this](spark::core::Vec<3>& v, spark::core::Vec<2>& x) {
 
-            double z_min = 0.0;
-            double z_max = parameters_.lz;
+            double z_min = parameters_.dz;
+            double z_max = parameters_.lz-parameters_.dz;
 
             double r_min = parameters_.dr;
             double r_max = parameters_.lr - parameters_.dr;
@@ -168,7 +168,7 @@ void Simulation::set_initial_conditions() {
             x.x = z_min + (z_max - z_min) * spark::random::uniform();
 
             double r_rand_sq = spark::random::uniform();
-            x.y = std::sqrt(r_min * r_min * (1.0 - r_rand_sq) + r_max * r_max * r_rand_sq);
+            x.y = std::sqrt(r_min * r_min + (r_max * r_max - r_min * r_min) * r_rand_sq);
 
             double vth = std::sqrt(spark::constants::kb * t / m);
             v = {spark::random::normal(0.0, vth), spark::random::normal(0.0, vth),
