@@ -9,14 +9,15 @@ void Parameters::fixed_parameters() {
     ti = 300.0; // ion temperature (K)
     m_he = 6.67e-27; // ion mass (kg)
     m_e = 9.109e-31; // electron mass (kg)
+    lz = 6.7e-2;
     lr = 6.7e-2; // horizontal length (cm)
     f = 13.56e6; // frequency (Hz)
 }
 
 void Parameters::computed_parameters() {
     dr = lr / static_cast<double>(nr - 1);
-    dz = dr;
-    lz = dz * static_cast<double>(nz - 1);
+    dz = lz / static_cast<double>(nz - 1);
+
     particle_weight = (n0 * spark::constants::pi * lr * lr * lz) /
                       static_cast<double>(ppc * (nz - 1) * (nr - 1));
     n_initial = (nz - 1) * (nr - 1) * ppc;

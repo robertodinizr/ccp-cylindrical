@@ -38,31 +38,31 @@ void Simulation::run() {
     std::vector<em::CylindricalPoissonSolver2D::Region> regions;
 
     regions.push_back(em::CylindricalPoissonSolver2D::Region{
-        em::CellType::BoundaryNeumann,
+        em::CellType::BoundaryDirichlet,
         {0, 0},
         {0, static_cast<int>(parameters_.nr - 1)},
         []() { return 0.0; }
     });
-    regions.push_back(em::CylindricalPoissonSolver2D::Region{
-        em::CellType::BoundaryNeumann,
-        {static_cast<int>(parameters_.nz - 1), 0},
-        {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 2)},
-        []() { return 0.0; }
-    });
-
-    regions.push_back(em::CylindricalPoissonSolver2D::Region{
-    em::CellType::BoundaryDirichlet,
-    {0, 0},
-    {static_cast<int>(parameters_.nz - 1), 0},
-    []() { return 0.0; } 
-    });
-
     double boundary_voltage = 0.0;
     regions.push_back(em::CylindricalPoissonSolver2D::Region{
         em::CellType::BoundaryDirichlet,
-        {0, static_cast<int>(parameters_.nr - 1)},
+        {static_cast<int>(parameters_.nz - 1), 0},
         {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 1)},
         [&boundary_voltage]() { return boundary_voltage; }
+    });
+
+    regions.push_back(em::CylindricalPoissonSolver2D::Region{
+    em::CellType::BoundaryNeumann,
+    {1, 0},
+    {static_cast<int>(parameters_.nz - 2), 0},
+    []() { return 0.0; } 
+    });
+
+    regions.push_back(em::CylindricalPoissonSolver2D::Region{
+        em::CellType::BoundaryNeumann,
+        {1, static_cast<int>(parameters_.nr - 1)},
+        {static_cast<int>(parameters_.nz - 2), static_cast<int>(parameters_.nr - 1)},
+        []() { return 0.0; }
     });
 
     auto poisson_solver = em::CylindricalPoissonSolver2D(domain_prop, regions);
@@ -196,12 +196,12 @@ void Simulation::set_initial_conditions() {
 
     std::vector<spark::particle::TiledBoundary> boundaries = {
     // Fronteiras em Z (axial) -> REFLETORAS
-    {{0, 0}, {0, static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Specular},
-    {{static_cast<int>(parameters_.nz - 1), 0}, {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Specular},
+    {{0, 0}, {0, static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Absorbing},
+    {{static_cast<int>(parameters_.nz - 1), 0}, {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Absorbing},
 
     // Fronteiras em R (eletrodos) -> ABSORVENTES
-    {{0, static_cast<int>(parameters_.nr - 1)}, {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Absorbing},
-    {{0, 0}, {static_cast<int>(parameters_.nz - 1), 0}, spark::particle::BoundaryType::Absorbing}
+    {{0, static_cast<int>(parameters_.nr - 1)}, {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Specular},
+    {{0, 0}, {static_cast<int>(parameters_.nz - 1), 0}, spark::particle::BoundaryType::Specular}
     };
     tiled_boundary_ = spark::particle::TiledBoundary2D(electric_field_.prop(), boundaries, parameters_.dt);
 }
