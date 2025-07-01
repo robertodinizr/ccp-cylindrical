@@ -73,6 +73,8 @@ namespace spark {
         Events<Event, EventAction> events_;
 
         void reduce_rho();
+        void debug_field_stats();
+        void debug_particle_counts();
         std::vector<spark::em::CylindricalPoissonSolver2D::Region> region() const;
         spark::spatial::TUniformGrid<spark::core::Vec<2>, 2> convert_electric_field() const;
         //spark::spatial::TUniformGrid<spark::core::TVec<double, 2>, 2> electric_field_;

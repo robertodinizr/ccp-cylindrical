@@ -16,7 +16,7 @@
 
 #include <fstream>
 #include <filesystem>
-
+#include <iostream>
 
 namespace spark {
 
@@ -52,16 +52,16 @@ void Simulation::run() {
     });
 
     regions.push_back(em::CylindricalPoissonSolver2D::Region{
-    em::CellType::BoundaryNeumann,
-    {1, 0},
-    {static_cast<int>(parameters_.nz - 2), 0},
-    []() { return 0.0; } 
+        em::CellType::BoundaryNeumann,
+        {1, static_cast<int>(parameters_.nr - 1)},
+        {static_cast<int>(parameters_.nz - 2), static_cast<int>(parameters_.nr - 1)},
+        []() { return 0.0; }
     });
 
     regions.push_back(em::CylindricalPoissonSolver2D::Region{
         em::CellType::BoundaryNeumann,
-        {1, static_cast<int>(parameters_.nr - 1)},
-        {static_cast<int>(parameters_.nz - 2), static_cast<int>(parameters_.nr - 1)},
+        {1, 0},
+        {static_cast<int>(parameters_.nz - 2), 0},
         []() { return 0.0; }
     });
 
@@ -77,6 +77,12 @@ void Simulation::run() {
         spark::interpolate::weight_to_grid_cylindrical(ions_, ion_density_);
 
         reduce_rho();
+        //double total_charge = 0.0;
+        //for (size_t i = 0; i < rho_field_.n_total(); ++i) {
+            //total_charge += rho_field_.data_ptr()[i];
+        //}
+        //std::cout << "Step " << step << ": Total charge = " << total_charge << "\n";
+
         poisson_solver.solve(phi_field_.data(), rho_field_.data());
 
         spark::em::electric_field_cylindrical(phi_field_, electric_field_.data());
@@ -115,6 +121,11 @@ void Simulation::run() {
         electron_collisions.react_all();
         ion_collisions.react_all();
 
+        if (step % 1000 == 0) {
+            debug_field_stats();
+            debug_particle_counts();
+        }
+
         events().notify(Event::Step, state_);
     }
     events().notify(Event::End, state_);
@@ -136,7 +147,7 @@ void Simulation::reduce_rho() {
             double cell_volume;
 
             if (j == 0) {
-                cell_volume = spark::constants::pi * (dr * dr / 4.0) * dz;
+                cell_volume = spark::constants::pi * (0.5 * dr) * (0.5 * dr) * dz;
             } else {
                 const double r_mid = (static_cast<double>(j) + 0.5) * dr;
                 cell_volume = 2.0 * spark::constants::pi * r_mid * dr * dz;
@@ -151,6 +162,42 @@ void Simulation::reduce_rho() {
     }
 }
 
+void Simulation::debug_field_stats() {
+    double max_ez = 0.0, max_er = 0.0;
+    double min_ez = 0.0, min_er = 0.0;
+
+    const auto& field_data = electric_field_.data();
+    const auto [nz, nr] = field_data.size().to<int>();
+
+    for (int i = 0; i < nz; i++) {
+        for (int j = 0; j < nr; j++) {
+            const auto& field = field_data(i, j);
+            max_ez = std::max(max_ez, field.x);
+            min_ez = std::min(min_ez, field.x);
+            max_er = std::max(max_er, field.y);
+            min_er = std::min(min_er, field.y);
+        }
+    }
+
+    std::cout << "Field Stats: Ez[" << min_ez << ", " << max_ez
+              << "] | Er[" << min_er << ", " << max_er << "]\n";
+}
+
+void Simulation::debug_particle_counts() {
+    int near_axis = 0;
+    const double dr = parameters_.dr;
+    const auto* x = electrons_.x();
+    const size_t n = electrons_.n();
+
+    for (size_t i = 0; i < n; i++) {
+        if (x[i].y < dr) near_axis++;
+    }
+
+    std::cout << "Particles: e⁻=" << n
+              << " ions=" << ions_.n()
+              << " | e⁻ near axis: " << near_axis << "\n";
+}
+
 Events<Simulation::Event, Simulation::EventAction>& Simulation::events() {
     return events_;
 }
@@ -160,15 +207,13 @@ void Simulation::set_initial_conditions() {
         return [t, m, this](spark::core::Vec<3>& v, spark::core::Vec<2>& x) {
 
             double z_min = parameters_.dz;
-            double z_max = parameters_.lz-parameters_.dz;
+            double z_max = parameters_.lz - parameters_.dz;
 
             double r_min = parameters_.dr;
             double r_max = parameters_.lr - parameters_.dr;
 
             x.x = z_min + (z_max - z_min) * spark::random::uniform();
-
-            double r_rand_sq = spark::random::uniform();
-            x.y = std::sqrt(r_min * r_min + (r_max * r_max - r_min * r_min) * r_rand_sq);
+            x.y = r_min + (r_max - r_min) * std::sqrt(spark::random::uniform());
 
             double vth = std::sqrt(spark::constants::kb * t / m);
             v = {spark::random::normal(0.0, vth), spark::random::normal(0.0, vth),
