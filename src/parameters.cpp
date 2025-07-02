@@ -10,16 +10,14 @@ void Parameters::fixed_parameters() {
     m_he = 6.67e-27; // ion mass (kg)
     m_e = 9.109e-31; // electron mass (kg)
     lz = 6.7e-2;
-    lr = 6.7e-2; // horizontal length (cm)
     f = 13.56e6; // frequency (Hz)
 }
 
 void Parameters::computed_parameters() {
-    dr = lr / static_cast<double>(nr - 1);
     dz = lz / static_cast<double>(nz - 1);
-
-    particle_weight = (n0 * spark::constants::pi * lr * lr * lz) /
-                      static_cast<double>(ppc * (nz - 1) * (nr - 1));
+    dr = dz;
+    lr = dr * static_cast<double>(nr - 1);
+    particle_weight = (n0 * lz * lr) / static_cast<double>(ppc * (nz - 1) * (nr - 1));
     n_initial = (nz - 1) * (nr - 1) * ppc;
 }
 
@@ -27,8 +25,8 @@ Parameters Parameters::case_1() {
     Parameters p{};
     p.fixed_parameters();
 
-    p.nr = 129; // number of horizontal cells
-    p.nz = 4; // number of vertical cells
+    p.nz = 129; // number of horizontal cells
+    p.nr = 4; // number of vertical cells
     p.dt = 1.0 / (400.0 * p.f); // time step (s)
     p.ng = 9.64e20; // neutral density (m^-3)
     p.n0 = 2.56e14; // plasma density (m^-3)

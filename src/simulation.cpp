@@ -26,6 +26,13 @@ Simulation::Simulation(const Parameters& parameters, const std::string& data_pat
 void Simulation::run() {
     set_initial_conditions();
 
+    std::cout << "Grid sizes:\n"
+          << "  phi: " << phi_field_.n().x << "x" << phi_field_.n().y << "\n"
+          << "  rho: " << rho_field_.n().x << "x" << rho_field_.n().y << "\n"
+          << "  electric: " << electric_field_.n().x << "x" << electric_field_.n().y << "\n"
+          << "  electrons: " << electrons_.n() << "\n"
+          << "  ions: " << ions_.n() << "\n";
+
     auto electron_collisions = load_electron_collisions();
     auto ion_collisions = load_ion_collisions();
 
@@ -72,20 +79,21 @@ void Simulation::run() {
 
     for (step = 0; step < parameters_.n_steps; ++step) {
         boundary_voltage = parameters_.volt * std::sin(2.0 * spark::constants::pi * parameters_.f * parameters_.dt * static_cast<double>(step));
+        electron_density_.data().fill(0.0);
+        ion_density_.data().fill(0.0);
 
         spark::interpolate::weight_to_grid_cylindrical(electrons_, electron_density_);
         spark::interpolate::weight_to_grid_cylindrical(ions_, ion_density_);
 
         reduce_rho();
-        //double total_charge = 0.0;
-        //for (size_t i = 0; i < rho_field_.n_total(); ++i) {
-            //total_charge += rho_field_.data_ptr()[i];
-        //}
-        //std::cout << "Step " << step << ": Total charge = " << total_charge << "\n";
 
         poisson_solver.solve(phi_field_.data(), rho_field_.data());
 
         spark::em::electric_field_cylindrical(phi_field_, electric_field_.data());
+        
+
+        electron_field.resize({electrons_.n()});
+        ion_field.resize({ions_.n()});
 
         spark::interpolate::field_at_particles_cylindrical(electric_field_, electrons_, electron_field);
         spark::interpolate::field_at_particles_cylindrical(electric_field_, ions_, ion_field);
@@ -136,28 +144,41 @@ void Simulation::reduce_rho() {
     const auto& ne = electron_density_.data();
     const auto& ni = ion_density_.data();
 
-    const auto& n = rho_field_.n();
+    const auto n = rho_field_.n();
     const double dz = parameters_.dz;
     const double dr = parameters_.dr;
     const double k = spark::constants::e * parameters_.particle_weight;
 
+    std::cout << "reduce_rho() - Verificando tamanhos:\n";
+    std::cout << "  rho_field: " << n.x << "x" << n.y << "\n";
+    std::cout << "  ne_field: " << ne.size().x << "x" << ne.size().y << "\n";
+    std::cout << "  ni_field: " << ni.size().x << "x" << ni.size().y << "\n";
     for (size_t i = 0; i < n.x; ++i) {
         for (size_t j = 0; j < n.y; ++j) {
-            const size_t idx = rho_field_.data().index(i, j);
+            // Verificação de limites
+            if (i >= ne.size().x || j >= ne.size().y) {
+                std::cerr << "Índice fora do limite ne: (" << i << "," << j << ")\n";
+                continue;
+            }
+
             double cell_volume;
-
             if (j == 0) {
-                cell_volume = spark::constants::pi * (0.5 * dr) * (0.5 * dr) * dz;
+                // Células no eixo (r=0)
+                cell_volume = spark::constants::pi * dr * dr / 4.0 * dz;
             } else {
-                const double r_mid = (static_cast<double>(j) + 0.5) * dr;
-                cell_volume = 2.0 * spark::constants::pi * r_mid * dr * dz;
+                // Células fora do eixo
+                const double r_inner = (j - 0.5) * dr;
+                const double r_outer = (j + 0.5) * dr;
+                cell_volume = spark::constants::pi * (r_outer*r_outer - r_inner*r_inner) * dz;
             }
 
-            if (cell_volume > 0.0) {
-                rho(i, j) = k * (ni[idx] - ne[idx]) / cell_volume;
-            } else {
-                rho(i, j) = 0.0;
-            }
+            // Verificação de NaN (corrigida)
+            double ni_val = ni(i, j);
+            double ne_val = ne(i, j);
+            if (std::isnan(ni_val)) ni_val = 0.0;
+            if (std::isnan(ne_val)) ne_val = 0.0;
+
+            rho(i, j) = k * (ni_val - ne_val) / cell_volume;
         }
     }
 }
@@ -205,19 +226,20 @@ Events<Simulation::Event, Simulation::EventAction>& Simulation::events() {
 void Simulation::set_initial_conditions() {
         auto emitter = [this](double t, double m) {
         return [t, m, this](spark::core::Vec<3>& v, spark::core::Vec<2>& x) {
-
-            double z_min = parameters_.dz;
-            double z_max = parameters_.lz - parameters_.dz;
-
-            double r_min = parameters_.dr;
-            double r_max = parameters_.lr - parameters_.dr;
-
-            x.x = z_min + (z_max - z_min) * spark::random::uniform();
-            x.y = r_min + (r_max - r_min) * std::sqrt(spark::random::uniform());
+            // Distribuição uniforme no volume cilíndrico
+            const double r = parameters_.lr * std::sqrt(spark::random::uniform());
+            const double theta = 2.0 * spark::constants::pi * spark::random::uniform();
+        
+            x.x = parameters_.lz * spark::random::uniform();
+            x.y = r;  // Coordenada radial
 
             double vth = std::sqrt(spark::constants::kb * t / m);
-            v = {spark::random::normal(0.0, vth), spark::random::normal(0.0, vth),
-                 spark::random::normal(0.0, vth)};
+            // Velocidades em coordenadas cartesianas
+            v = {
+                spark::random::normal(0.0, vth),
+                spark::random::normal(0.0, vth),
+                spark::random::normal(0.0, vth)
+            };
         };
     };
 
@@ -240,13 +262,10 @@ void Simulation::set_initial_conditions() {
         {parameters_.lz, parameters_.lr}, {parameters_.nz, parameters_.nr});
 
     std::vector<spark::particle::TiledBoundary> boundaries = {
-    // Fronteiras em Z (axial) -> REFLETORAS
-    {{0, 0}, {0, static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Absorbing},
-    {{static_cast<int>(parameters_.nz - 1), 0}, {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Absorbing},
-
-    // Fronteiras em R (eletrodos) -> ABSORVENTES
-    {{0, static_cast<int>(parameters_.nr - 1)}, {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Specular},
-    {{0, 0}, {static_cast<int>(parameters_.nz - 1), 0}, spark::particle::BoundaryType::Specular}
+        {{-1, -1}, {static_cast<int>(parameters_.nz - 1), -1}, spark::particle::BoundaryType::Specular},
+        {{0, static_cast<int>(parameters_.nr - 1)}, {static_cast<int>(parameters_.nz - 2), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Specular},
+        {{-1, 0}, {-1, static_cast<int>(parameters_.nr)}, spark::particle::BoundaryType::Absorbing},
+        {{static_cast<int>(parameters_.nz - 1), -1}, {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Absorbing}
     };
     tiled_boundary_ = spark::particle::TiledBoundary2D(electric_field_.prop(), boundaries, parameters_.dt);
 }
