@@ -149,10 +149,6 @@ void Simulation::reduce_rho() {
     const double dr = parameters_.dr;
     const double k = spark::constants::e * parameters_.particle_weight;
 
-    std::cout << "reduce_rho() - Verificando tamanhos:\n";
-    std::cout << "  rho_field: " << n.x << "x" << n.y << "\n";
-    std::cout << "  ne_field: " << ne.size().x << "x" << ne.size().y << "\n";
-    std::cout << "  ni_field: " << ni.size().x << "x" << ni.size().y << "\n";
     for (size_t i = 0; i < n.x; ++i) {
         for (size_t j = 0; j < n.y; ++j) {
             // Verificação de limites
@@ -226,12 +222,10 @@ Events<Simulation::Event, Simulation::EventAction>& Simulation::events() {
 void Simulation::set_initial_conditions() {
         auto emitter = [this](double t, double m) {
         return [t, m, this](spark::core::Vec<3>& v, spark::core::Vec<2>& x) {
-            // Distribuição uniforme no volume cilíndrico
-            const double r = parameters_.lr * std::sqrt(spark::random::uniform());
-            const double theta = 2.0 * spark::constants::pi * spark::random::uniform();
         
             x.x = parameters_.lz * spark::random::uniform();
-            x.y = r;  // Coordenada radial
+            x.y = parameters_.lr * std::sqrt(spark::random::uniform()) + parameters_.dr;
+
 
             double vth = std::sqrt(spark::constants::kb * t / m);
             // Velocidades em coordenadas cartesianas
