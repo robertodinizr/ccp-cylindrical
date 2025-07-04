@@ -27,7 +27,7 @@ struct Parameters {
     size_t n_steps_avg;
     double particle_weight;
     size_t n_initial;
-
+    double r_min_factor = 4.0;
     static Parameters case_1();
     static Parameters case_2();
     static Parameters case_3();
