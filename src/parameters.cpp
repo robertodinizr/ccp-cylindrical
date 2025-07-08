@@ -17,11 +17,7 @@ void Parameters::computed_parameters() {
     dz = lz / static_cast<double>(nz - 1);
     dr = dz;
     lr = dr * static_cast<double>(nr - 1);
-
-    double r_min = r_min_factor * dr;
-    double volume_total = spark::constants::pi * (lr/2) * (lr/2) * lz;
-    particle_weight = (n0 * volume_total) / static_cast<double>(ppc * (nz - 1) * (nr - 1));
-    
+    particle_weight = (n0 * lz * lr) / static_cast<double>(ppc * (nz - 1) * (nr - 1));
     n_initial = (nz - 1) * (nr - 1) * ppc;
 }
 
