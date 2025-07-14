@@ -1,6 +1,8 @@
 #include "parameters.h"
 #include "spark/constants/constants.h"
 
+#include <cmath>
+
 namespace spark {
 
 void Parameters::fixed_parameters() {
@@ -17,7 +19,9 @@ void Parameters::computed_parameters() {
     dz = lz / static_cast<double>(nz - 1);
     dr = dz;
     lr = dr * static_cast<double>(nr - 1);
-    particle_weight = (n0 * lz * lr) / static_cast<double>(ppc * (nz - 1) * (nr - 1));
+    double vth = std::sqrt(spark::constants::kb * te / spark::constants::m_e);
+    double A = spark::constants::pi * lr * lr;
+    particle_weight = (n0 * lr * lz) / static_cast<double>(ppc * (nz - 1) * (nr - 1));
     n_initial = (nz - 1) * (nr - 1) * ppc;
 }
 

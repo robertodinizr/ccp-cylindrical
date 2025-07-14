@@ -11,12 +11,14 @@
 #include <spark/particle/pusher.h>
 #include <spark/random/random.h>
 #include <spark/spatial/grid.h>
+#include <spark/particle/emitter.h>
 
 #include "reactions.h"
 
 #include <fstream>
 #include <filesystem>
 #include <iostream>
+
 
 namespace spark {
 
@@ -85,13 +87,13 @@ void Simulation::run() {
 
         poisson_solver.solve(phi_field_.data(), rho_field_.data());
 
-        spark::em::electric_field_cylindrical(phi_field_, electric_field_.data());
+        spark::em::electric_field(phi_field_, electric_field_.data());
 
         spark::interpolate::field_at_particles_cylindrical(electric_field_, electrons_, electron_field);
         spark::interpolate::field_at_particles_cylindrical(electric_field_, ions_, ion_field);
 
-        spark::particle::boris_mover_cylindrical(electrons_, electron_field, parameters_.dt);
-        spark::particle::boris_mover_cylindrical(ions_, ion_field, parameters_.dt);
+        spark::particle::move_particles_cylindrical(electrons_, electron_field, parameters_.dt);
+        spark::particle::move_particles_cylindrical(ions_, ion_field, parameters_.dt);
 
         tiled_boundary_.apply(electrons_);
         tiled_boundary_.apply(ions_);
@@ -99,83 +101,37 @@ void Simulation::run() {
         electron_collisions.react_all();
         ion_collisions.react_all();
 
-        if (step % 1000 == 0) {
-            debug_field_stats();
-            debug_particle_counts();
-        }
 
         events().notify(Event::Step, state_);
     }
     events().notify(Event::End, state_);
 }
 
+
 void Simulation::reduce_rho() {
+    const auto k = constants::e * parameters_.particle_weight;
 
-    auto& rho = rho_field_.data();
-    const auto& ne = electron_density_.data();
-    const auto& ni = ion_density_.data();
+    auto* rho_ptr = rho_field_.data_ptr();
+    auto* ne = electron_density_.data_ptr();
+    auto* ni = ion_density_.data_ptr();
 
-    const auto n_dims = rho_field_.n();
-    const double dz = parameters_.dz;
-    const double dr = parameters_.dr;
-
-    for (size_t i = 0; i < n_dims.x; ++i) {
-	double dz_node = dz;
-	if (i == 0 || i == n_dims.x - 1) {
-	    dz_node *= 0.5;
-	}
-        for (size_t j = 0; j < n_dims.y; ++j) {
-        
-	    double r2 = std::min(j + 0.5, static_cast<double>(n_dims.y) - 0.5) * dr;
-	    double r1 = std::max(j - 0.5, 0.0) * dr;
-	    double V = dz_node * spark::constants::pi * (r2 * r2 - r1 * r1);
-	
+    for (int i = 0; i < parameters_.nz; i++) {
+	for (int j = 0; j < parameters_.nr; j++) {
+            
+	    double r2 = std::min((static_cast<double>(j) + 0.5) * parameters_.dr, static_cast<double>(parameters_.nr - 1));
+	    double r1 = std::max((static_cast<double>(j) - 0.5) * parameters_.dr, 0.0);
+	    double dz = parameters_.dz;
+	    if (i == 0 || i == parameters_.nz - 1) {
+	        dz *= 0.5;
+	    } 
+	    double V = dz * spark::constants::pi * (r2 * r2 - r1 * r1);
 	    if (j == 0) {
 	        V *= 2.0;
 	    }
-            if (V > 1e-15) {
-	        rho(i, j) = spark::constants::e * (ni(i, j) - ne(i, j)) / V;
-            } else {
-	        rho(i, j) = 0.0;
-	    }
-        }
+
+            rho_ptr[i] = k * (ni[i] - ne[i]) / V;
+	}
     }
-}
-
-void Simulation::debug_field_stats() {
-    double max_ez = 0.0, max_er = 0.0;
-    double min_ez = 0.0, min_er = 0.0;
-
-    const auto& field_data = electric_field_.data();
-    const auto [nz, nr] = field_data.size().to<int>();
-
-    for (int i = 0; i < nz; i++) {
-        for (int j = 0; j < nr; j++) {
-            const auto& field = field_data(i, j);
-            max_ez = std::max(max_ez, field.x);
-            min_ez = std::min(min_ez, field.x);
-            max_er = std::max(max_er, field.y);
-            min_er = std::min(min_er, field.y);
-        }
-    }
-
-    std::cout << "Field Stats: Ez[" << min_ez << ", " << max_ez
-              << "] | Er[" << min_er << ", " << max_er << "]\n";
-}
-
-void Simulation::debug_particle_counts() {
-    int near_axis = 0;
-    const double dr = parameters_.dr;
-    const auto* x = electrons_.x();
-    const size_t n = electrons_.n();
-
-    for (size_t i = 0; i < n; i++) {
-        if (x[i].y < dr) near_axis++;
-    }
-
-    std::cout << "Particles: e⁻=" << n
-              << " ions=" << ions_.n()
-              << " | e⁻ near axis: " << near_axis << "\n";
 }
 
 Events<Simulation::Event, Simulation::EventAction>& Simulation::events() {
@@ -183,30 +139,24 @@ Events<Simulation::Event, Simulation::EventAction>& Simulation::events() {
 }
 
 void Simulation::set_initial_conditions() {
-        auto emitter = [this](double t, double m) {
-        return [t, m, this](spark::core::Vec<3>& v, spark::core::Vec<2>& x) {
+    auto emitter = [this](double t, double m) {
+    return [t, m, this](spark::core::Vec<3>& v, spark::core::Vec<2>& x) {
 
-            x.x =  std::sqrt(spark::random::uniform()) * parameters_.lz;
-	    double r = std::sqrt(spark::random::uniform()) * parameters_.lr;
-	    x.y = r;
-
-
-            double vth = std::sqrt(spark::constants::kb * t / m);
-            // Velocidades em coordenadas cartesianas
-            v = {
-                spark::random::normal(0.0, vth),
-                spark::random::normal(0.0, vth),
-                spark::random::normal(0.0, vth)
-            };
+    x.x = spark::random::uniform() * parameters_.lz;
+    x.y = std::sqrt(spark::random::uniform()) * parameters_.lr;
+    double vth = std::sqrt(spark::constants::kb * t / m);
+    v = {
+        spark::random::normal(0.0, vth),
+        spark::random::normal(0.0, vth),
+        spark::random::normal(0.0, vth)
         };
     };
-
+};
     electrons_ = spark::particle::ChargedSpecies<2, 3>(-spark::constants::e, spark::constants::m_e);
     electrons_.add(parameters_.n_initial, emitter(parameters_.te, spark::constants::m_e));
 
     ions_ = spark::particle::ChargedSpecies<2, 3>(spark::constants::e, parameters_.m_he);
-    ions_.add(parameters_.n_initial, emitter(parameters_.ti, parameters_.m_he));
-
+    ions_.add(parameters_.n_initial, emitter(parameters_.ti, parameters_.m_he)); 
     electron_density_ = spark::spatial::UniformGrid<2>({parameters_.lz, parameters_.lr},
                                                       {parameters_.nz, parameters_.nr});
     ion_density_ = spark::spatial::UniformGrid<2>({parameters_.lz, parameters_.lr},
@@ -220,9 +170,12 @@ void Simulation::set_initial_conditions() {
         {parameters_.lz, parameters_.lr}, {parameters_.nz, parameters_.nr});
 
     std::vector<spark::particle::TiledBoundary> boundaries = {
-        {{0, 0}, {0, static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Absorbing},
-	{{static_cast<int>(parameters_.nz - 1), 0}, {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Absorbing},
-	{{0, static_cast<int>(parameters_.nr - 1)}, {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Specular}
+            {{-1, -1}, {static_cast<int>(parameters_.nz - 1), -1}, spark::particle::BoundaryType::Specular},
+            {{0, static_cast<int>(parameters_.nr - 1)}, {static_cast<int>(parameters_.nz - 2), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Specular},
+            {{-1, 0}, {-1, static_cast<int>(parameters_.nr)}, spark::particle::BoundaryType::Absorbing},
+            {{static_cast<int>(parameters_.nz - 1), -1}, {static_cast<int>(parameters_.nz - 1), static_cast<int>(parameters_.nr - 1)}, spark::particle::BoundaryType::Absorbing}
+    
+    
     };
     tiled_boundary_ = spark::particle::TiledBoundary2D(electric_field_.prop(), boundaries, parameters_.dt);
 }
